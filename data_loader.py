@@ -5,6 +5,7 @@ from binance.client import Client
 from talib import WILLR, SMA, RSI, MOM, CMO, ADX, TEMA
 from datetime import datetime, timedelta
 import binance_secrets
+import numpy as np
 
 
 
@@ -37,6 +38,17 @@ def calculate_days_halving(date_in):
 
     return days_after.days, days_before.days
 
+
+def calculate_trend_pred(closing_mean, sma_mean):
+    div = closing_mean/sma_mean
+
+    if div < 0.95:
+        return 0
+    elif div >= 0.95 and div <= 1.05:
+        return 1
+    else: return 2
+
+
 def get_DF_from_DB():
     engine = sqlalchemy.create_engine('sqlite:///DataSource.db')
     engine.connect()
@@ -49,6 +61,8 @@ def get_DF_from_klines():
     if frame is not None:
         frame = frame.iloc[:, :6]
         frame.columns = ['Time','Open','high' ,'low' , 'close', 'Volume' ]
+        frame[['Open','high' ,'low' , 'close', 'Volume']] = frame[['Open','high' ,'low' , 'close', 'Volume']].apply(pd.to_numeric)
+
         frame['WILLR'] = WILLR(frame['high'], frame['low'], frame['close'])
         frame['SMA'] = SMA(frame['close'], timeperiod=20)
         frame['RSI'] = RSI(frame['close'], timeperiod=14)
@@ -73,7 +87,33 @@ def load_df_to_DB(frame):
         frame.to_sql('BTC_USDT_Historic', engine, if_exists='replace')
 
 
-frame = get_DF_from_klines()
-#frame = get_DF_from_DB()
-load_df_to_DB(frame)
+def create_sections(df, seq_length):
+    X_seq = []
+    y_lab = []
+    for i in range(30, len(df) - 7, 3):
+        sequence = df.iloc[i - seq_length:i]
+        
+
+        pred_seq = df.iloc[i: i+7]
+
+        sma_pred = pred_seq['SMA'].mean()
+        close_pred = pred_seq['close'].mean()
+
+        input_val = sequence.drop('Time', axis='columns').values
+        X_seq.append(np.concatenate(input_val))
+        y_lab.append(calculate_trend_pred(close_pred, sma_pred))
+
+    return X_seq, y_lab
+
+#frame = get_DF_from_klines()
+frame = get_DF_from_DB()
+
+X_seq, y_lab = create_sections(frame, 7)
+
+print(len(X_seq[6:15])) 
+print(f"DOWNTREND SECTIONS:  {y_lab.count(0)}")
+print(f"SIDETREND SECTIONS:   {y_lab.count(1)}")
+print(f"UPTREND SECTIONS:  {y_lab.count(2)}")
+
+#load_df_to_DB(frame)
 print(frame.sample(10))
