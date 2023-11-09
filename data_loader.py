@@ -6,6 +6,8 @@ from talib import WILLR, SMA, RSI, MOM, CMO, ADX, TEMA
 from datetime import datetime, timedelta
 import binance_secrets
 import numpy as np
+import sklearn as sk
+import sklearn.preprocessing as prep
 
 
 
@@ -68,8 +70,8 @@ def get_DF_from_klines():
         frame['RSI'] = RSI(frame['close'], timeperiod=14)
         frame['MOM'] = MOM(frame['close'], timeperiod=10)
         frame['CMO'] = CMO(frame['close'], timeperiod=14)
-        frame['ADX'] = ADX(frame['high'], frame['low'], frame['close'], timeperiod=14)
-        frame['TEMA'] = TEMA(frame['close'], timeperiod=14)
+        frame['ADX'] = ADX(frame['high'], frame['low'], frame['close'], timeperiod=7)
+        frame['TEMA'] = TEMA(frame['close'], timeperiod=10)
         frame['Time'] = pd.to_datetime(frame['Time'], unit='ms')
         frame[['DAYS_AFTER_HALVING', 'DAYS_BEFORE_HALVING']] = frame['Time'].apply(lambda x: calculate_days_halving(x.strftime("%Y-%m-%d"))).tolist()
 
@@ -78,7 +80,8 @@ def get_DF_from_klines():
 
     return frame
 
-
+def normalize_dataframe(frame):
+    scaled_features = prep.StandardScaler().drop(['Time', 'index'], axis='columns').values
 
 def load_df_to_DB(frame):
     if frame is not None:
@@ -99,21 +102,24 @@ def create_sections(df, seq_length):
         sma_pred = pred_seq['SMA'].mean()
         close_pred = pred_seq['close'].mean()
 
-        input_val = sequence.drop('Time', axis='columns').values
-        X_seq.append(np.concatenate(input_val))
+        input_val = sequence.drop(['Time', 'index'], axis='columns').values
+        X_seq.append(input_val)
         y_lab.append(calculate_trend_pred(close_pred, sma_pred))
 
-    return X_seq, y_lab
+    return np.array(X_seq), y_lab
 
 #frame = get_DF_from_klines()
 frame = get_DF_from_DB()
 
-X_seq, y_lab = create_sections(frame, 7)
+X_seq, y_lab = create_sections(frame, 14)
+
 
 print(len(X_seq[6:15])) 
+print(X_seq[0].item(0))
+print(type(X_seq[0].item(0)))
 print(f"DOWNTREND SECTIONS:  {y_lab.count(0)}")
 print(f"SIDETREND SECTIONS:   {y_lab.count(1)}")
 print(f"UPTREND SECTIONS:  {y_lab.count(2)}")
 
 #load_df_to_DB(frame)
-print(frame.sample(10))
+print(frame[:40])
