@@ -68,7 +68,7 @@ def get_DF_from_klines():
         frame['WILLR'] = WILLR(frame['high'], frame['low'], frame['close'])
         frame['SMA'] = SMA(frame['close'], timeperiod=20)
         frame['RSI'] = RSI(frame['close'], timeperiod=14)
-        frame['MOM'] = MOM(frame['close'], timeperiod=10)
+        frame['MOM'] = MOM(frame['close'], timeperiod=5)
         frame['CMO'] = CMO(frame['close'], timeperiod=14)
         frame['ADX'] = ADX(frame['high'], frame['low'], frame['close'], timeperiod=7)
         frame['TEMA'] = TEMA(frame['close'], timeperiod=10)
@@ -80,8 +80,36 @@ def get_DF_from_klines():
 
     return frame
 
-def normalize_dataframe(frame):
-    scaled_features = prep.StandardScaler().drop(['Time', 'index'], axis='columns').values
+def normalize_dataframe(frame: pd.DataFrame):
+    scaled_frame = frame.copy()
+
+    scaled_frame = scaled_frame.drop(['Time', 'index'], axis='columns').dropna()
+
+    scaled_frame['Volume'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['Volume']).reshape(-1,1))
+    scaled_frame['WILLR'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['WILLR']).reshape(-1,1))
+    scaled_frame['CMO'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['CMO']).reshape(-1,1))
+    scaled_frame['ADX'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['ADX']).reshape(-1,1))
+    scaled_frame['RSI'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['RSI']).reshape(-1,1))
+    scaled_frame['DAYS_AFTER_HALVING'] = prep.MinMaxScaler().fit_transform(np.array(scaled_frame['DAYS_AFTER_HALVING']).reshape(-1,1))
+    scaled_frame['DAYS_BEFORE_HALVING'] = prep.MinMaxScaler().fit_transform(np.array(scaled_frame['DAYS_BEFORE_HALVING']).reshape(-1,1))
+
+    return scaled_frame
+
+def normalize_section(frame):
+
+
+    scaled_section_frame = frame.copy()
+
+    scaled_section_frame['Open'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['Open']).reshape(-1,1))
+    scaled_section_frame['high'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['high']).reshape(-1,1))
+    scaled_section_frame['low'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['low']).reshape(-1,1))
+    scaled_section_frame['close'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['close']).reshape(-1,1))
+    scaled_section_frame['SMA'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['SMA']).reshape(-1,1))
+    scaled_section_frame['MOM'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['MOM']).reshape(-1,1))
+    scaled_section_frame['TEMA'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['TEMA']).reshape(-1,1))
+
+    return scaled_section_frame
+
 
 def load_df_to_DB(frame):
     if frame is not None:
@@ -90,36 +118,31 @@ def load_df_to_DB(frame):
         frame.to_sql('BTC_USDT_Historic', engine, if_exists='replace')
 
 
-def create_sections(df, seq_length):
+def create_sections(df: pd.DataFrame, seq_length):
     X_seq = []
     y_lab = []
     for i in range(30, len(df) - 7, 3):
         sequence = df.iloc[i - seq_length:i]
         
+        normalized_sequence = normalize_section(sequence)
 
         pred_seq = df.iloc[i: i+7]
 
         sma_pred = pred_seq['SMA'].mean()
         close_pred = pred_seq['close'].mean()
 
-        input_val = sequence.drop(['Time', 'index'], axis='columns').values
-        X_seq.append(input_val)
+        
+        X_seq.append(normalized_sequence.values)
         y_lab.append(calculate_trend_pred(close_pred, sma_pred))
 
     return np.array(X_seq), y_lab
 
 #frame = get_DF_from_klines()
-frame = get_DF_from_DB()
-
-X_seq, y_lab = create_sections(frame, 14)
-
-
-print(len(X_seq[6:15])) 
-print(X_seq[0].item(0))
-print(type(X_seq[0].item(0)))
-print(f"DOWNTREND SECTIONS:  {y_lab.count(0)}")
-print(f"SIDETREND SECTIONS:   {y_lab.count(1)}")
-print(f"UPTREND SECTIONS:  {y_lab.count(2)}")
+#frame = get_DF_from_DB()
 
 #load_df_to_DB(frame)
-print(frame[:40])
+
+#normalized_frame = normalize_dataframe(frame)
+
+#X_seq, y_lab = create_sections(normalized_frame, 14)
+
