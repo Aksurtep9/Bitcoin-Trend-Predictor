@@ -1,5 +1,6 @@
 import sqlite3
 import pandas as pd
+import dataframe_image as dfi
 import sqlalchemy
 from binance.client import Client
 from talib import WILLR, SMA, RSI, MOM, CMO, ADX, TEMA
@@ -8,6 +9,7 @@ import binance_secrets
 import numpy as np
 import sklearn as sk
 import sklearn.preprocessing as prep
+import matplotlib.pyplot as plt
 
 
 
@@ -86,29 +88,32 @@ def normalize_dataframe(frame: pd.DataFrame):
     scaled_frame = scaled_frame.drop(['Time', 'index'], axis='columns').dropna()
 
     scaled_frame['Volume'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['Volume']).reshape(-1,1))
-    scaled_frame['WILLR'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['WILLR']).reshape(-1,1))
-    scaled_frame['CMO'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['CMO']).reshape(-1,1))
-    scaled_frame['ADX'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['ADX']).reshape(-1,1))
-    scaled_frame['RSI'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['RSI']).reshape(-1,1))
+    #scaled_frame['WILLR'] = prep.StandardScaler().fit_transform(np.array(scaled_frame['WILLR']).reshape(-1,1))
+    scaled_frame['WILLR'] = scaled_frame['WILLR'] / 100
+    scaled_frame['CMO'] = scaled_frame['CMO'] / 100
+    scaled_frame['ADX'] = scaled_frame['ADX'] / 100
+    scaled_frame['RSI'] = scaled_frame['RSI'] / 100
     scaled_frame['DAYS_AFTER_HALVING'] = prep.MinMaxScaler().fit_transform(np.array(scaled_frame['DAYS_AFTER_HALVING']).reshape(-1,1))
     scaled_frame['DAYS_BEFORE_HALVING'] = prep.MinMaxScaler().fit_transform(np.array(scaled_frame['DAYS_BEFORE_HALVING']).reshape(-1,1))
 
     return scaled_frame
 
 def normalize_section(frame):
-
-
     scaled_section_frame = frame.copy()
 
     scaled_section_frame['Open'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['Open']).reshape(-1,1))
     scaled_section_frame['high'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['high']).reshape(-1,1))
     scaled_section_frame['low'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['low']).reshape(-1,1))
     scaled_section_frame['close'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['close']).reshape(-1,1))
-    scaled_section_frame['SMA'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['SMA']).reshape(-1,1))
+    #scaled_section_frame['SMA'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['SMA']).reshape(-1,1))
     scaled_section_frame['MOM'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['MOM']).reshape(-1,1))
-    scaled_section_frame['TEMA'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['TEMA']).reshape(-1,1))
+    #scaled_section_frame['TEMA'] = prep.MinMaxScaler().fit_transform(np.array(scaled_section_frame['TEMA']).reshape(-1,1))
 
     return scaled_section_frame
+
+def normalize_MA(ma, close):
+    ma = (ma - close.min()) / (close.max() - close.min())
+    return ma
 
 
 def load_df_to_DB(frame):
@@ -121,11 +126,15 @@ def load_df_to_DB(frame):
 def create_sections(df: pd.DataFrame, seq_length):
     X_seq = []
     y_lab = []
-    for i in range(30, len(df) - 7, 3):
+    for i in range(30, len(df) - 7, 1):
         sequence = df.iloc[i - seq_length:i]
         
         normalized_sequence = normalize_section(sequence)
 
+        sma_lookback = df.iloc[i-20:i]
+        tema_lookback = df.iloc[i-10:i]
+        normalized_sequence['SMA'] = normalize_MA(sequence['SMA'], sma_lookback['close'])
+        normalized_sequence['TEMA'] = normalize_MA(sequence['TEMA'], tema_lookback['close'])
         pred_seq = df.iloc[i: i+7]
 
         sma_pred = pred_seq['SMA'].mean()
@@ -138,11 +147,42 @@ def create_sections(df: pd.DataFrame, seq_length):
     return np.array(X_seq), y_lab
 
 #frame = get_DF_from_klines()
-#frame = get_DF_from_DB()
+frame = get_DF_from_DB()
+
+#dfi.export(frame[:7].style.background_gradient(), "unnormalized_table_7.png")
+
+frame = normalize_dataframe(frame= frame)
+
+
+#frame[:7].to_csv("un_df_7.csv")
+
+#print(frame.dropna().count())
+
+X, y = create_sections(frame, 14)
+
+
+
+print(len(y))
+print(y.count(2))
+print(y.count(0))
+print(y.count(1))
+
+
+trend_counted = [y.count(2),y.count(0), y.count(1)]
+
+#plt.bar(['Uptrend', 'Downtrend', 'Sideways Trend'],trend_counted , width=[0.3,0.3,0.3] , color=['green', 'red', 'blue'])
+
+#plt.show()
+
+#pd.plotting.table(ax,frame[:7])
+
+#plt.savefig('unn_df_7.png')
 
 #load_df_to_DB(frame)
 
 #normalized_frame = normalize_dataframe(frame)
+
+
 
 #X_seq, y_lab = create_sections(normalized_frame, 14)
 

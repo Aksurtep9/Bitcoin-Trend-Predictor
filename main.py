@@ -12,9 +12,12 @@ import matplotlib.pyplot as plt
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+print("DEVICE:::::>>>>>>>>>>>>>>" + device)
+
 loss_fn = torch.nn.CrossEntropyLoss()
 
 optimizer = torch.optim.SGD(params= model_vgg.model.parameters() , lr=0.001) 
+
 
 
 def train_step(model: torch.nn.Module,
@@ -30,14 +33,12 @@ def train_step(model: torch.nn.Module,
         X, y = X.to(device), y.to(device)
 
         # 1. Forward pass
-        y_pred = model(X)
+        y_pred_logit = model(X)
 
         # 2. Calculate loss
-        loss = loss_fn(y_pred, y)
-        train_loss += loss
-        train_acc += accuracy_fn(y_true=y,
-                                 y_pred=y_pred.argmax(dim=1)) # Go from logits -> pred labels
-        
+        #y_pred = torch.softmax(y_pred_logit, dim=1).argmax()
+        loss = loss_fn(y_pred_logit, y)
+        train_loss += loss.item()
 
         # 3. Optimizer zero grad
         optimizer.zero_grad()
@@ -48,14 +49,15 @@ def train_step(model: torch.nn.Module,
         # 5. Optimizer step
         optimizer.step()
 
-        y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
-        train_acc += (y_pred_class == y).sum().item()/len(y_pred)
+        y_pred_class = torch.argmax(torch.softmax(y_pred_logit, dim=1), dim=1)
+        train_acc += (y_pred_class == y).sum().item()/len(y_pred_logit)
 
     # Calculate loss and accuracy per epoch and print out what's happening
     train_loss /= len(data_loader)
     train_acc /= len(data_loader)
     #print(f"Train loss: {train_loss:.5f} | Train accuracy: {train_acc:.2f}%")
-    return train_loss.cpu().detach().item(), train_acc
+    #return train_loss.cpu().detach().item(), train_acc
+    return train_loss, train_acc
 
 def test_step(data_loader: torch.utils.data.DataLoader,
               model: torch.nn.Module,
@@ -76,7 +78,7 @@ def test_step(data_loader: torch.utils.data.DataLoader,
             
             # 2. Calculate loss and accuracy
             #loss += loss_fn(test_pred_logits, y)
-            test_loss += loss_fn(test_pred_logits, y)
+            test_loss += loss_fn(test_pred_logits, y).item()
             test_acc += accuracy_fn(y_true=y,
                 y_pred=test_pred # Go from logits -> pred labels
             )
@@ -85,7 +87,8 @@ def test_step(data_loader: torch.utils.data.DataLoader,
         test_loss /= len(data_loader)
         test_acc /= len(data_loader)
         #print(f"Test loss: {test_loss:.5f} | Test accuracy: {test_acc:.2f}%\n")
-        return test_loss.cpu().detach().item(), test_acc
+        #return test_loss.cpu().detach().item(), test_acc
+        return test_loss, test_acc
 
 # Calculate accuracy (a classification metric)
 def accuracy_fn(y_true, y_pred):
@@ -104,8 +107,8 @@ def train(model: torch.nn.Module,
     # 2. Create empty results dictionary
     results = {"train_loss": [],
         "train_acc": [],
-        "test_loss": [],
-        "test_acc": []
+        "valid_loss": [],
+        "valid_acc": []
     }
     
     # 3. Loop through training and testing steps for a number of epochs
@@ -127,27 +130,66 @@ def train(model: torch.nn.Module,
             f"Epoch: {epoch+1} | "
             f"train_loss: {train_loss:.4f} | "
             f"train_acc: {train_acc:.4f} | "
-            f"test_loss: {test_loss:.4f} | "
-            f"test_acc: {test_acc:.4f}"
+            f"valid_loss: {test_loss:.4f} | "
+            f"valid: {test_acc:.4f}"
         )
 
         # 5. Update results dictionary
         results["train_loss"].append(train_loss)
         results["train_acc"].append(train_acc)
-        results["test_loss"].append(test_loss)
-        results["test_acc"].append(test_acc)
-
-        
+        results["valid_loss"].append(test_loss)
+        results["valid_acc"].append(test_acc)
 
     # 6. Return the filled results at the end of the epochs
     return results
 
+def testing_model(model: torch.nn.Module, 
+          test_dataloader: torch.utils.data.DataLoader, 
+          loss_fn: torch.nn.Module = torch.nn.CrossEntropyLoss()):
+    
+    test_loss, test_acc = 0, 0
+    model.eval() # put model in eval mode
+    # Turn on inference context manager
+    with torch.inference_mode(): 
+        for X, y in test_dataloader:
+            X, y = X.to(device), y.to(device)
+
+            test_pred_logits = model(X)
+
+            test_pred = torch.softmax(test_pred_logits, dim=1).argmax(dim=1)
+            
+            # 2. Calculate loss and accuracy
+            #loss += loss_fn(test_pred_logits, y)
+            test_loss += loss_fn(test_pred_logits, y)
+            test_acc += accuracy_fn(y_true=y,
+                y_pred=test_pred # Go from logits -> pred labels
+            )
+            print(
+            f"test_loss: {test_loss:.4f} | "
+            f"test_acc: {test_acc:.4f}"
+            )
+        
+        # Adjust metrics and print out
+        test_loss /= len(test_dataloader)
+        test_acc /= len(test_dataloader)
+        #print(f"Test loss: {test_loss:.5f} | Test accuracy: {test_acc:.2f}%\n")
+        return test_loss.cpu().detach().item(), test_acc
+
+    
+
+
+
 model_results = train(model=model_vgg.model,
                           train_dataloader=get_data_loader(BATCH=4, mode="TRAIN"),
-                          test_dataloader=get_data_loader(BATCH=4, mode="TEST"),
+                          test_dataloader=get_data_loader(BATCH=4, mode="VALIDATION"),
                           optimizer=optimizer,
                           loss_fn=loss_fn,
-                          epochs=600)
+                          epochs=800)
+
+model_testing_result = testing_model(model=model_vgg.model,
+                                     test_dataloader=get_data_loader(BATCH=4, mode="TEST"),
+                                     loss_fn=loss_fn)
+
 
 #print(X[:5], y[:5])
 
@@ -165,11 +207,11 @@ def plot_loss_curves(results):
     
     # Get the loss values of the results dictionary (training and test)
     loss = results['train_loss']
-    test_loss = results['test_loss']
+    test_loss = results['valid_loss']
 
     # Get the accuracy values of the results dictionary (training and test)
     accuracy = results['train_acc']
-    test_accuracy = results['test_acc']
+    test_accuracy = results['valid_acc']
 
     # Figure out how many epochs there were
     epochs = range(len(results['train_loss']))
@@ -185,7 +227,7 @@ def plot_loss_curves(results):
     # Plot loss
     plt.subplot(1, 2, 1)
     plt.plot(epochs, loss, label='train_loss')
-    plt.plot(epochs, test_loss, label='test_loss')
+    plt.plot(epochs, test_loss, label='valid_loss')
     plt.title('Loss')
     plt.xlabel('Epochs')
     plt.legend()
@@ -193,7 +235,7 @@ def plot_loss_curves(results):
     # Plot accuracy
     plt.subplot(1, 2, 2)
     plt.plot(epochs, accuracy, label='train_accuracy')
-    plt.plot(epochs, test_accuracy, label='test_accuracy')
+    plt.plot(epochs, test_accuracy, label='valid_accuracy')
     plt.title('Accuracy')
     plt.xlabel('Epochs')
     plt.legend()

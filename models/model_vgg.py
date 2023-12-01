@@ -12,7 +12,7 @@ class BTCPredModelV1(torch.nn.Module):
                       kernel_size=3, 
                       stride=1,
                       padding=1),
-
+            nn.ReLU(),
             nn.Conv1d(in_channels=hidden_units, 
                       out_channels=hidden_units,
                       kernel_size=3,
@@ -30,8 +30,9 @@ class BTCPredModelV1(torch.nn.Module):
         )
         self.classifier = nn.Sequential(
             nn.Flatten(),
-           
-            nn.Linear(in_features=(hidden_units // 2) * (input_shape // 2), 
+            nn.Linear(in_features=(hidden_units // 2) * (input_shape // 2), out_features= 256),
+            nn.Linear(in_features=256, out_features= 256),
+            nn.Linear(in_features=256, 
                       out_features=output_shape)
         )
     
